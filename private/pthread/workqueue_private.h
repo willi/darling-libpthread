@@ -132,6 +132,13 @@ __API_AVAILABLE(macos(10.10), ios(8.0))
 int
 _pthread_workqueue_addthreads(int numthreads, pthread_priority_t priority);
 
+#ifdef DARLING
+// Request cooperative-pool worker threads
+__API_AVAILABLE(macos(13.0), ios(16.0))
+int
+_pthread_workqueue_add_cooperativethreads(int numthreads, pthread_priority_t priority);
+#endif
+
 // Should this thread return to the kernel?
 __API_AVAILABLE(macos(10.13), ios(11.0), tvos(11.0), watchos(4.0))
 bool

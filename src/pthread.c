@@ -2127,6 +2127,40 @@ sched_yield(void)
 	return 0;
 }
 
+#ifdef DARLING
+// Apple's build makes these aliases of sched_yield (xcodescripts/pthread.aliases), which Darling's build does not
+// apply; newer Foundation and CoreData call pthread_yield_np
+void
+pthread_yield_np(void)
+{
+	sched_yield();
+}
+
+void
+cthread_yield(void)
+{
+	sched_yield();
+}
+
+// os_workgroup (in newer libdispatch) installs these callbacks; Darling has no workgroup-aware thread creation,
+// so they are recorded only to match Apple's install-once contract.
+struct pthread_workgroup_functions_s;
+void pthread_install_workgroup_functions_np(const struct pthread_workgroup_functions_s *pwgf);
+
+static const struct pthread_workgroup_functions_s *_pthread_workgroup_functions;
+
+void
+pthread_install_workgroup_functions_np(const struct pthread_workgroup_functions_s *pwgf)
+{
+	if (_pthread_workgroup_functions) {
+		PTHREAD_CLIENT_CRASH((uintptr_t)_pthread_workgroup_functions,
+				"workgroup functions already installed");
+	}
+
+	_pthread_workgroup_functions = pwgf;
+}
+#endif
+
 // Libsystem knows about this symbol and exports it to libsyscall
 int
 pthread_current_stack_contains_np(const void *addr, size_t length)
@@ -2637,6 +2671,25 @@ _pthread_workqueue_addthreads(int numthreads, pthread_priority_t priority)
 	}
 	return res;
 }
+
+#ifdef DARLING
+// Newer libdispatch (such as the one in iOS Simulator runtimes) requests cooperative-pool threads through this SPI.
+int
+_pthread_workqueue_add_cooperativethreads(int numthreads, pthread_priority_t priority)
+{
+	int res = 0;
+
+	if (__libdispatch_workerfunction == NULL) {
+		return EPERM;
+	}
+
+	res = __workq_kernreturn(WQOPS_QUEUE_REQTHREADS2, NULL, numthreads, (int)priority);
+	if (res == -1) {
+		res = errno;
+	}
+	return res;
+}
+#endif
 
 int
 _pthread_workqueue_set_event_manager_priority(pthread_priority_t priority)
