@@ -2411,6 +2411,16 @@ _pthread_wqthread_exit(pthread_t self)
 	_pthread_exit(self, NULL);
 }
 
+#ifdef DARLING
+// from XNU's bsd/pthread/workqueue_syscalls.h and priority_private.h, newer than the ones Darling builds with
+#ifndef WQ_FLAG_THREAD_COOPERATIVE
+#define WQ_FLAG_THREAD_COOPERATIVE 0x01000000 /* thread is part of cooperative thread pool */
+#endif
+#ifndef _PTHREAD_PRIORITY_COOPERATIVE_FLAG
+#define _PTHREAD_PRIORITY_COOPERATIVE_FLAG 0x08000000u
+#endif
+#endif
+
 // workqueue entry point from kernel
 void
 _pthread_wqthread(pthread_t self, mach_port_t kport, void *stacklowaddr,
@@ -2433,6 +2443,15 @@ _pthread_wqthread(pthread_t self, mach_port_t kport, void *stacklowaddr,
 
 	self->tsd[_PTHREAD_TSD_SLOT_PTHREAD_QOS_CLASS] = (void *)pp;
 
+#ifdef DARLING
+	// Only used for conveying to libdispatch that the thread is coming out to
+	// handle a cooperative request.
+	pthread_priority_t workq_function2_arg = pp;
+	if (flags & WQ_FLAG_THREAD_COOPERATIVE) {
+		workq_function2_arg |= _PTHREAD_PRIORITY_COOPERATIVE_FLAG;
+	}
+#endif
+
 	// avoid spills on the stack hard to keep used stack space minimal
 	if (os_unlikely(nkevents == WORKQ_EXIT_THREAD_NKEVENT)) {
 		_pthread_wqthread_exit(self);
@@ -2454,7 +2473,11 @@ _pthread_wqthread(pthread_t self, mach_port_t kport, void *stacklowaddr,
 		self->arg = (void *)(uintptr_t)pp;
 		self->wq_nevents = 0;
 		if (os_likely(__workq_newapi)) {
+#ifdef DARLING
+			(*__libdispatch_workerfunction)(workq_function2_arg);
+#else
 			(*__libdispatch_workerfunction)(pp);
+#endif
 		} else {
 			_pthread_wqthread_legacy_worker_wrap(pp);
 		}
