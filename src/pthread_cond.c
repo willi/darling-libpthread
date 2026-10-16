@@ -826,7 +826,11 @@ _pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex,
 		}
 	}
 
-	if (!ulock && cond->busy != NULL && cond->busy != mutex) {
+	// One load: a waiter leaving clears `busy` without holding the mutex, and Darling builds this file unoptimised, so
+	// two loads of it saw it set, then cleared (NULL != mutex), and failed a valid wait with EINVAL (Rust's std asserts
+	// on that, and aborted backboardd).
+	pthread_mutex_t *busy = os_atomic_load(&cond->busy, relaxed);
+	if (!ulock && busy != NULL && busy != mutex) {
 		// TODO: PTHREAD_STRICT candidate
 		return EINVAL;
 	}
